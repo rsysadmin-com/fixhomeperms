@@ -1,4 +1,4 @@
-#-not/bin/bash 
+#!/bin/bash 
 
 #
 # fixhomeperms.sh v0.0001
