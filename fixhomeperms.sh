@@ -59,7 +59,7 @@ function fixDirectories {   # option -d
 
 function fixNonExecFiles {  # option -n
     echo -e " [$(date +%_H:%M:%S)] == Fixing non-exec files permissions (chmod 644) ... \c"
-    find $HOME/ -type f \( -not -name '*.sh' -not -name '*.pl' -not -name '*.py' -not -name '*.rb' -not -name '*.run' \) -print0 | xargs -0 -n1024 -P0 chmod 644
+    find $HOME/ -type f \( -not -name '*.sh' -not -name '*.pl' -not -name '*.py' -not -name '*.rb' -not -name '*.run' -not -path '*/\.*' \) -print0 | xargs -0 -n1024 -P0 chmod 644
     returnStatus
 }
 

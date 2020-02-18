@@ -16,6 +16,7 @@ The following is assumed:<p>
   1. directories are to be set as rwxr-xr-x (octal: 755)<p>
   2. non-executable files (i.e. PDFs, txt, etc) are to be set as rw-r--r-- (octal: 644)<p>
   3. executable files (i.e. shell scripts, Perl, Python, Ruby and RUN files) are to be set as rwxr-xr-x (octal: 755)<p>
+  4. hidden directories and files are left untouched (thanks Drazenko Djuricic for the heads-up!)
 <p>
 Feel free to modify the script to suit your needs<p>
 
