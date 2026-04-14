@@ -1,56 +1,112 @@
 # fixhomeperms.sh
 
-Quick and dirty script to fix permissions for all files and directories under `$HOME`.
+A fast and flexible Bash utility to fix file and directory permissions across one or more target paths.
 
-This little tool makes use of `find` and `xargs` to boost the operations and it's faster than the `find -exec chmod` combo.
+Originally a "quick and dirty" script, it has evolved into a more robust and configurable tool that normalizes permissions using `find` and `xargs` for performance.
 
-Yes, you can run the same commands manually everytime but this script features options to fix all permissions on your `$HOME` as they should be... 
+## Features
 
-This is specially usefull when copying files from other systems and permissions on directories and files get garbled, and you end up with things like:
+- Supports one or multiple target directories
+- Defaults to `$HOME` if no path is provided
+- Fast execution using `find` + `xargs`
+- Optional verbosity levels
+- Optional dry-run mode
+- Selective fixes (directories, files, or specific script types)
 
-```
-drwxrwxrwx directory
--rwxrwxrwx file
-```
-    
- everywhere... 
+## Use case
 
-## considerations
-
-The following is assumed:
-  1. directories are to be set as `rwxr-xr-x` (octal: 0755)
-  2. non-executable files (i.e. PDFs, txt, etc) are to be set as `rw-r--r--` (octal: 0644)
-  3. executable files (i.e. shell scripts, Perl, Python, Ruby and RUN files) are to be set as `rwxr-xr-x` (octal: 0755)
-  4. hidden directories and files are left untouched (thanks Drazenko Djuricic for the heads-up!)
-
-Feel free to modify the script to suit your needs
-
-## usage
+Especially useful when copying files between systems or restoring backups where permissions get mangled:
 
 ```
-./fixhomeperms.sh 
-fixhomeperms.sh by Martin Mielke <martinm@rsysadmin.com>
-
-Usage:  fixhomeperms.sh [-h] [-d] [-n] [-s] [-p] [-P] [-r] [-R] [-a]
-        -h  Prints this help.
-        -d  Fix permissions on directories (0755).
-        -n  Fix permissions on non-exec files (0644).
-        -s  Fix permissions on shell script files (0755).
-        -p  Fix permissions on Perl files (0755).
-        -P  Fix permissions on Python files (0755).
-        -r  Fix permissions on Ruby files (0755).
-        -R  Fix permissions on RUN files (0755).
-        -a  Fix permissions on all executable files (.sh, .pl, .py, .rb, .run).
-        -A  Fix all in one step, including directories and non-exec files.
-
+  drwxrwxrwx directory
+  -rwxrwxrwx file
 ```
 
+## Assumptions
 
+The script enforces the following conventions:
 
+1. Directories -> `rwxr-xr-x` (0755)
+2. Non-executable files (e.g. .txt, .pdf) -> `rw-r--r--` (0644)
+3. Executable files by extension:
+   - .sh, .pl, .py, .rb, .run -> `rwxr-xr-x` (0755)
+4. Hidden files and directories are ignored in the non-exec pass
 
+Note: Executable files are detected by extension, not by shebang or existing execute bit.
 
-# disclaimer
+## Usage
 
-This script is provided "AS IS" and the author is not to be held responsible for any damage caused by the use or misuse thereof.
+`./fixhomeperms.sh [options] [directory ...]`
 
-  
+If no directory is provided, `$HOME` is used.
+
+### Options
+```
+  -h  Help
+
+  -d  Fix directories (0755)
+  -n  Fix non-exec files (0644)
+
+  -s  *.sh files (0755)
+  -p  *.pl files (0755)
+  -P  *.py files (0755)
+  -r  *.rb files (0755)
+  -R  *.run files (0755)
+
+  -a  All executable-by-type files
+  -A  Everything:
+      directories + non-exec + executable files
+```
+
+### Verbosity
+```
+  -v   Verbose output
+  -vv  Very verbose (prints every chmod)
+  -q   Quiet mode (cron-friendly)
+```
+
+### Dry-run (simulation mode)
+```
+  -N            Dry-run
+  --dry-run     Dry-run
+```
+Shows what would be executed without modifying anything.
+
+## Examples
+
+Fix everything in current directory:
+`./fixhomeperms.sh -A .`
+
+Fix everything in multiple directories:
+`./fixhomeperms.sh -A dir1 dir2 dir3`
+
+Dry-run before applying changes:
+`./fixhomeperms.sh -A --dry-run .`
+
+Verbose dry-run:
+`./fixhomeperms.sh -A -vv --dry-run .`
+
+Quiet mode:
+`./fixhomeperms.sh -A -q /some/path`
+
+## Considerations
+
+- Uses parallel execution (`xargs -P`), which can be tuned in the script
+- Hidden files are skipped in non-exec processing
+- Does not detect executables via shebang (by design)
+- Use caution when running on large directory trees or system paths
+
+## Customization
+
+You can easily adapt:
+
+- File extensions considered executable
+- Permission modes
+- Exclusion rules (e.g. .git, .cache, node_modules)
+- Parallelism (PARALLEL_JOBS)
+
+## Disclaimer
+
+This script is provided "AS IS", without warranty of any kind.
+
+The author shall not be held responsible for any damage caused by the use or misuse of this tool.
