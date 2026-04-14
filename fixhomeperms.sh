@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 #
-# fixhomeperms.sh v0.1000
+# fixhomeperms.sh
 #
 # Fix permissions for files and directories under one or more target paths.
 #
@@ -17,10 +17,10 @@
 #
 # Examples:
 #   ./fixhomeperms.sh -A
-#   ./fixhomeperms.sh -A "$HOME"
+#   ./fixhomeperms.sh -A -v "$HOME"
 #   ./fixhomeperms.sh -A .
-#   ./fixhomeperms.sh -A my-directory
-#   ./fixhomeperms.sh -A dir1 dir2 dir3
+#   ./fixhomeperms.sh -A -vv my-directory
+#   ./fixhomeperms.sh -A -q dir1 dir2 dir3
 #   ./fixhomeperms.sh -d -n .
 #   ./fixhomeperms.sh -a ~/bin ~/src
 #
@@ -29,14 +29,15 @@ set -o nounset
 set -o pipefail
 
 SCRIPT_NAME="$(basename "$0")"
-VERSION="0.1000"
+VERSION="0.2100"
 
 TARGETS=()
 DO_DIRS=0
 DO_NONEXEC=0
 DO_EXEC=0
 
-# xargs parallelism; tune if desired
+VERBOSE=0
+
 PARALLEL_JOBS=4
 XARGS_BATCH=1024
 
@@ -45,54 +46,44 @@ usage() {
 $SCRIPT_NAME v$VERSION by Martin Mielke <martinm@rsysadmin.com>
 
 Usage:
-  $SCRIPT_NAME [-h] [-d] [-n] [-s] [-p] [-P] [-r] [-R] [-a] [-A] [directory ...]
+  $SCRIPT_NAME [-h] [-v|-vv|-q] [-d] [-n] [-s] [-p] [-P] [-r] [-R] [-a] [-A] [directory ...]
+
+Verbosity:
+  -v   Verbose
+  -vv  Very verbose (print every chmod)
+  -q   Quiet
 
 Options:
-  -h  Print this help.
-  -d  Fix permissions on directories (0755).
-  -n  Fix permissions on non-exec files (0644).
-  -s  Fix permissions on shell script files (*.sh -> 0755).
-  -p  Fix permissions on Perl files (*.pl -> 0755).
-  -P  Fix permissions on Python files (*.py -> 0755).
-  -r  Fix permissions on Ruby files (*.rb -> 0755).
-  -R  Fix permissions on RUN files (*.run -> 0755).
-  -a  Fix permissions on all executable-by-type files.
-  -A  Fix everything in one step:
-      directories + non-exec files + all executable-by-type files.
+  -h  Help
+  -d  Directories (0755)
+  -n  Non-exec files (0644)
+  -s  *.sh (0755)
+  -p  *.pl (0755)
+  -P  *.py (0755)
+  -r  *.rb (0755)
+  -R  *.run (0755)
+  -a  All executable-by-type
+  -A  Everything
 
-Notes:
-  * If no directory is provided, \$HOME is used.
-  * Multiple directories may be specified.
-  * Hidden files are excluded from the non-exec pass, like in your original script.
-
-Examples:
-  $SCRIPT_NAME -A
-  $SCRIPT_NAME -A \$HOME
-  $SCRIPT_NAME -A .
-  $SCRIPT_NAME -A my-directory
-  $SCRIPT_NAME -A dir1 dir2 dir3
 EOF
     exit 1
 }
 
-timestamp() {
-    date +%H:%M:%S
-}
+timestamp() { date +%H:%M:%S; }
 
 log() {
-    printf ' [%s] == %s' "$(timestamp)" "$1"
+    [[ $VERBOSE -ge 0 ]] && printf ' [%s] == %s' "$(timestamp)" "$1"
 }
 
-ok() {
-    printf '\t[ OK ]\n'
+log_verbose() {
+    [[ $VERBOSE -ge 1 ]] && echo "    $*"
 }
 
-error() {
-    printf '\t[ ERROR ]\n' >&2
-}
+ok() { printf '\t[ OK ]\n'; }
+error() { printf '\t[ ERROR ]\n' >&2; }
 
 finish_message() {
-    printf ' [%s] -- All set.\n\n' "$(timestamp)"
+    [[ $VERBOSE -ge 0 ]] && printf ' [%s] -- All set.\n\n' "$(timestamp)"
     exit 0
 }
 
@@ -102,10 +93,8 @@ die() {
 }
 
 validate_targets() {
-    local t
     for t in "${TARGETS[@]}"; do
-        [[ -e "$t" ]] || die "Target does not exist: $t"
-        [[ -d "$t" ]] || die "Target is not a directory: $t"
+        [[ -d "$t" ]] || die "Invalid directory: $t"
     done
 }
 
@@ -116,26 +105,34 @@ run_chmod_find() {
 
     log "$description ... "
 
-    if find "${TARGETS[@]}" "$@" -print0 | xargs -0 -r -n"$XARGS_BATCH" -P"$PARALLEL_JOBS" chmod "$mode"
-    then
-        ok
+    if [[ $VERBOSE -ge 2 ]]; then
+        # VERY VERBOSE → per-file
+        find "${TARGETS[@]}" "$@" -print0 |
+        while IFS= read -r -d '' f; do
+            echo "chmod $mode \"$f\""
+            chmod "$mode" "$f"
+        done
     else
-        error
-        return 1
+        # NORMAL / VERBOSE → batched
+        if find "${TARGETS[@]}" "$@" -print0 | \
+            xargs -0 -r -n"$XARGS_BATCH" -P"$PARALLEL_JOBS" chmod "$mode"
+        then
+            :
+        else
+            error
+            return 1
+        fi
     fi
+
+    ok
 }
 
 fix_directories() {
-    run_chmod_find \
-        "Fixing directory permissions (chmod 0755)" \
-        "0755" \
-        -type d
+    run_chmod_find "Fixing directory permissions (0755)" "0755" -type d
 }
 
 fix_nonexec_files() {
-    run_chmod_find \
-        "Fixing non-exec file permissions (chmod 0644)" \
-        "0644" \
+    run_chmod_find "Fixing non-exec files (0644)" "0644" \
         -type f \
         ! -name '*.sh' \
         ! -name '*.pl' \
@@ -149,57 +146,28 @@ fix_exec_by_pattern() {
     local pattern="$1"
     local label="$2"
 
-    run_chmod_find \
-        "Fixing permissions for $label files (chmod 0755)" \
-        "0755" \
-        -type f \
-        -name "$pattern"
+    log_verbose "Pattern: $pattern"
+
+    run_chmod_find "Fixing $label files (0755)" "0755" \
+        -type f -name "$pattern"
 }
 
-fix_shell_files() {
-    fix_exec_by_pattern '*.sh' 'Shell'
-}
-
-fix_perl_files() {
-    fix_exec_by_pattern '*.pl' 'Perl'
-}
-
-fix_python_files() {
-    fix_exec_by_pattern '*.py' 'Python'
-}
-
-fix_ruby_files() {
-    fix_exec_by_pattern '*.rb' 'Ruby'
-}
-
-fix_run_files() {
-    fix_exec_by_pattern '*.run' 'RUN'
-}
-
-fix_all_executable_files() {
-    fix_shell_files
-    fix_perl_files
-    fix_python_files
-    fix_ruby_files
-    fix_run_files
-}
-
-fix_all() {
-    fix_directories
-    fix_nonexec_files
-    fix_all_executable_files
-}
+fix_shell_files()  { fix_exec_by_pattern '*.sh' "Shell"; }
+fix_perl_files()   { fix_exec_by_pattern '*.pl' "Perl"; }
+fix_python_files() { fix_exec_by_pattern '*.py' "Python"; }
+fix_ruby_files()   { fix_exec_by_pattern '*.rb' "Ruby"; }
+fix_run_files()    { fix_exec_by_pattern '*.run' "RUN"; }
 
 parse_args() {
-    local opt
-
     if [[ $# -eq 0 ]]; then
         usage
     fi
 
-    while getopts ":hdnspPrRaA" opt; do
+    while getopts ":hvqdnsppPrRaA" opt; do
         case "$opt" in
             h) usage ;;
+            v) ((VERBOSE++)) ;;
+            q) VERBOSE=-1 ;;
             d) DO_DIRS=1 ;;
             n) DO_NONEXEC=1 ;;
             s) DO_EXEC=1; EXEC_SHELL=1 ;;
@@ -225,9 +193,7 @@ parse_args() {
                 EXEC_RUBY=1
                 EXEC_RUN=1
                 ;;
-            \?)
-                usage
-                ;;
+            *) usage ;;
         esac
     done
 
@@ -245,7 +211,6 @@ parse_args() {
 }
 
 main() {
-    # initialize per-extension flags
     EXEC_SHELL=0
     EXEC_PERL=0
     EXEC_PYTHON=0
@@ -270,5 +235,3 @@ main() {
 }
 
 main "$@"
-
-# The End.
